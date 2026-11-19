@@ -1,0 +1,168 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-obsidian: #090d14;
+  --color-obsidian-soft: #0e1623;
+  --color-ice: #7dd3fc;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+  background-color: #090d14;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background-color: #090d14;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background-color: #090d14;
+  color: #e2e8f0;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: rgba(56, 189, 248, 0.35);
+  color: #ffffff;
+}
+
+.glass {
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.018));
+  border: 1px solid rgba(125, 211, 252, 0.13);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow:
+    0 24px 60px -28px rgba(0, 0, 0, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.glass-strong {
+  background: linear-gradient(155deg, rgba(19, 32, 48, 0.92), rgba(9, 13, 20, 0.94));
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  box-shadow:
+    0 30px 80px -30px rgba(0, 0, 0, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.glass-interactive {
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.glass-interactive:hover {
+  transform: translateY(-2px);
+  border-color: rgba(56, 189, 248, 0.45);
+  box-shadow:
+    0 26px 60px -26px rgba(8, 145, 178, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.text-glow {
+  text-shadow: 0 0 28px rgba(56, 189, 248, 0.45);
+}
+
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(125, 211, 252, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(125, 211, 252, 0.045) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(ellipse at 50% 0%, black, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 0%, black, transparent 72%);
+}
+
+.bg-aurora {
+  background:
+    radial-gradient(circle at 12% -10%, rgba(14, 165, 233, 0.18), transparent 42%),
+    radial-gradient(circle at 88% 8%, rgba(34, 211, 238, 0.12), transparent 38%),
+    radial-gradient(circle at 50% 110%, rgba(2, 132, 199, 0.1), transparent 45%);
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes atlas-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes atlas-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes atlas-ping-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+}
+
+.animate-float {
+  animation: atlas-float 7s ease-in-out infinite;
+}
+
+.animate-ping-ring {
+  animation: atlas-ping-ring 1.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.shimmer-text {
+  background: linear-gradient(100deg, #7dd3fc 20%, #ffffff 42%, #22d3ee 62%, #7dd3fc 80%);
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: atlas-shimmer 5s linear infinite;
+}
+
+.safe-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+}
