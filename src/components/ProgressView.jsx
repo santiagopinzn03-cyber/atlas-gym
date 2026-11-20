@@ -11,21 +11,28 @@ import {
   Weight,
   X,
 } from 'lucide-react'
+import PeriodFilter from './PeriodFilter'
 import {
   DAILY_TARGET_KG,
   formatKg,
-  getDailyVolumes,
+  getComparisonLabel,
+  getPeriodBuckets,
+  getPeriodExpectedDays,
+  getPeriodSets,
+  getPeriodSessions,
+  getPeriodTonnage,
+  getPreviousPeriodTonnage,
+  getSemaphoreLabel,
   getStreak,
   getStrengthComparison,
-  getWeeklySessions,
-  getWeeklyTonnage,
-  getWeekDays,
+  getTonnageLabel,
 } from '../lib/atlasData'
 
 function TrafficDay({ day, volume }) {
+  const target = day.target ?? DAILY_TARGET_KG
   const status = day.isFuture
     ? 'pending'
-    : volume >= DAILY_TARGET_KG
+    : volume >= target
       ? 'ok'
       : volume > 0
         ? 'partial'
@@ -55,32 +62,26 @@ function TrafficDay({ day, volume }) {
   )
 }
 
-export default function ProgressView({ history }) {
-  const data = useMemo(
-    () => ({
-      days: getWeekDays(),
-      volumes: getDailyVolumes(history),
-      tonnage: getWeeklyTonnage(history),
-      previousTonnage: getWeeklyTonnage(history, -1),
-      sessions: getWeeklySessions(history),
+export default function ProgressView({ history, period, monthOffset, onPeriodChange }) {
+  const data = useMemo(() => {
+    const tonnage = getPeriodTonnage(history, period, monthOffset)
+
+    return {
+      buckets: getPeriodBuckets(history, period, monthOffset),
+      tonnage,
+      previousTonnage: getPreviousPeriodTonnage(history, period, monthOffset),
+      sessions: getPeriodSessions(history, period, monthOffset),
+      expectedDays: getPeriodExpectedDays(period, monthOffset),
+      sets: getPeriodSets(history, period, monthOffset).length,
       streak: getStreak(history),
-      comparison: getStrengthComparison(history),
-      sets: history.filter((set) => {
-        const date = new Date(set.created_at)
-        const today = new Date()
-        const monday = new Date(today)
-        monday.setHours(0, 0, 0, 0)
-        monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
-        return date >= monday
-      }).length,
-    }),
-    [history],
-  )
+      comparison: getStrengthComparison(history, period, monthOffset),
+    }
+  }, [history, period, monthOffset])
 
   const tonnageDelta = data.previousTonnage
     ? ((data.tonnage - data.previousTonnage) / data.previousTonnage) * 100
     : 0
-  const consistency = Math.round((data.sessions / 7) * 100)
+  const consistency = Math.round((data.sessions / Math.max(data.expectedDays, 1)) * 100)
   const maxStrength = Math.max(
     ...data.comparison.flatMap((item) => [item.current, item.previous]),
     1,
@@ -96,24 +97,28 @@ export default function ProgressView({ history }) {
           Tu progreso
         </h1>
         <p className="mt-2 text-sm text-slate-400">
-          Semáforo semanal y evolución de fuerza con datos reales de tus series.
+          Volumen, constancia y evolución de fuerza con datos reales de tus series.
         </p>
       </header>
+
+      <PeriodFilter period={period} monthOffset={monthOffset} onChange={onPeriodChange} />
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="glass rounded-2xl p-5">
           <Weight className="h-5 w-5 text-cyan-300" />
           <p className="mt-5 font-display text-2xl font-bold text-white">{formatKg(data.tonnage)} kg</p>
-          <p className="mt-1 text-xs text-slate-400">Tonelaje semanal</p>
+          <p className="mt-1 text-xs text-slate-400">{getTonnageLabel(period, monthOffset)}</p>
           <p className={`mt-2 flex items-center gap-1 text-[11px] ${tonnageDelta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
             {tonnageDelta >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
             {tonnageDelta >= 0 ? '+' : ''}
-            {tonnageDelta.toFixed(1)}% vs semana anterior
+            {tonnageDelta.toFixed(1)}% {getComparisonLabel(period, monthOffset)}
           </p>
         </div>
         <div className="glass rounded-2xl p-5">
           <CalendarDays className="h-5 w-5 text-sky-300" />
-          <p className="mt-5 font-display text-2xl font-bold text-white">{data.sessions}/7</p>
+          <p className="mt-5 font-display text-2xl font-bold text-white">
+            {data.sessions}/{data.expectedDays}
+          </p>
           <p className="mt-1 text-xs text-slate-400">Sesiones completadas</p>
           <p className="mt-2 text-[11px] text-slate-500">{data.sets} series registradas</p>
         </div>
@@ -127,15 +132,23 @@ export default function ProgressView({ history }) {
           <Trophy className="h-5 w-5 text-violet-300" />
           <p className="mt-5 font-display text-2xl font-bold text-white">{consistency}%</p>
           <p className="mt-1 text-xs text-slate-400">Consistencia</p>
-          <p className="mt-2 text-[11px] text-slate-500">Objetivo: 7 de 7 días</p>
+          <p className="mt-2 text-[11px] text-slate-500">
+            Objetivo: {data.expectedDays} de {data.expectedDays} días
+          </p>
         </div>
       </section>
 
       <section className="glass rounded-2xl p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-display text-base font-bold text-white">Semáforo semanal</h2>
-            <p className="mt-1 text-xs text-slate-500">Objetivo diario: {formatKg(DAILY_TARGET_KG)} kg de volumen</p>
+            <h2 className="font-display text-base font-bold text-white">
+              {getSemaphoreLabel(period, monthOffset)}
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              {period === 'year'
+                ? 'Objetivo mensual según los días de cada mes'
+                : `Objetivo diario: ${formatKg(DAILY_TARGET_KG)} kg de volumen`}
+            </p>
           </div>
           <div className="flex flex-wrap gap-4 text-[10px] text-slate-500">
             <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-400" /> Objetivo</span>
@@ -143,9 +156,9 @@ export default function ProgressView({ history }) {
             <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-rose-400" /> Pendiente</span>
           </div>
         </div>
-        <div className="mt-6 grid grid-cols-7 gap-2 sm:gap-3">
-          {data.days.map((day) => (
-            <TrafficDay key={day.key} day={day} volume={data.volumes[day.key] ?? 0} />
+        <div className={`mt-6 grid gap-2 sm:gap-3 ${period === 'year' ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-7'}`}>
+          {data.buckets.map((bucket) => (
+            <TrafficDay key={bucket.key} day={bucket} volume={bucket.volume} />
           ))}
         </div>
       </section>
@@ -155,7 +168,9 @@ export default function ProgressView({ history }) {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-display text-base font-bold text-white">Comparativa de fuerza</h2>
-              <p className="mt-1 text-xs text-slate-500"> Estimación 1RM · esta semana vs anterior</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Estimación de 1RM · {getComparisonLabel(period, monthOffset)}
+              </p>
             </div>
             <Target className="h-5 w-5 text-cyan-300" />
           </div>
@@ -210,7 +225,9 @@ export default function ProgressView({ history }) {
           >
             <div className="absolute inset-2 flex flex-col items-center justify-center rounded-full bg-obsidian">
               <span className="font-display text-3xl font-bold text-white">{consistency}%</span>
-              <span className="mt-1 text-[11px] text-slate-500">{data.sessions} de 7 días</span>
+              <span className="mt-1 text-[11px] text-slate-500">
+                {data.sessions} de {data.expectedDays} días
+              </span>
             </div>
           </div>
           <p className="mt-5 text-center text-xs leading-relaxed text-slate-500">

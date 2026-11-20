@@ -43,12 +43,40 @@ const FEATURES = [
   },
 ]
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function mensajeAutenticacion(error) {
+  const mensaje = error?.message?.toLowerCase() ?? ''
+
+  if (mensaje.includes('invalid login credentials')) return 'Correo o contraseña incorrectos.'
+  if (mensaje.includes('email not confirmed')) return 'Debes confirmar tu correo antes de iniciar sesión.'
+  if (mensaje.includes('already registered')) return 'Ya existe una cuenta con este correo.'
+  if (mensaje.includes('weak password')) return 'La contraseña es demasiado débil. Usa al menos 6 caracteres.'
+  if (mensaje.includes('too many requests')) return 'Demasiados intentos. Espera un momento y vuelve a intentarlo.'
+
+  return 'No se pudo completar la operación. Inténtalo de nuevo.'
+}
+
 export default function AtlasLogin() {
+  const [modo, setModo] = useState('login')
+  const [formulario, setFormulario] = useState({ nombre: '', correo: '', contrasena: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  function cambiarModo(siguienteModo) {
+    setModo(siguienteModo)
+    setError('')
+    setSuccess('')
+  }
+
+  function actualizarCampo(campo, valor) {
+    setFormulario((anterior) => ({ ...anterior, [campo]: valor }))
+  }
 
   async function handleGoogleSignIn() {
     setError('')
+    setSuccess('')
     setLoading(true)
 
     try {
@@ -62,7 +90,66 @@ export default function AtlasLogin() {
 
       if (signInError) throw signInError
     } catch (signInError) {
-      setError(signInError.message || 'No se pudo iniciar sesión con Google.')
+      setError(mensajeAutenticacion(signInError))
+      setLoading(false)
+    }
+  }
+
+  async function handleCorreoSubmit(event) {
+    event.preventDefault()
+    setError('')
+    setSuccess('')
+
+    const nombre = formulario.nombre.trim()
+    const correo = formulario.correo.trim()
+    const contrasena = formulario.contrasena
+
+    if (modo === 'register' && !nombre) {
+      setError('Escribe tu nombre completo.')
+      return
+    }
+    if (!correo) {
+      setError('Escribe tu correo electrónico.')
+      return
+    }
+    if (!EMAIL_PATTERN.test(correo)) {
+      setError('El correo electrónico no tiene un formato válido.')
+      return
+    }
+    if (!contrasena) {
+      setError('Escribe tu contraseña.')
+      return
+    }
+    if (modo === 'register' && contrasena.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      if (modo === 'register') {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: correo,
+          password: contrasena,
+          options: { data: { full_name: nombre } },
+        })
+
+        if (signUpError) throw signUpError
+        if (!data.session) {
+          setSuccess('Cuenta creada. Revisa tu correo para confirmarla y después inicia sesión.')
+        }
+      } else {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: correo,
+          password: contrasena,
+        })
+
+        if (signInError) throw signInError
+      }
+    } catch (authError) {
+      setError(mensajeAutenticacion(authError))
+    } finally {
       setLoading(false)
     }
   }
@@ -80,7 +167,7 @@ export default function AtlasLogin() {
             </div>
             <div>
               <p className="font-display text-lg font-bold tracking-[0.24em] text-white">ATLAS</p>
-              <p className="text-[10px] uppercase tracking-[0.3em] text-cyan-300/60">Kinetic Obsidian</p>
+              <p className="text-[10px] uppercase tracking-[0.3em] text-cyan-300/60">Fuerza Pura</p>
             </div>
           </div>
           <span className="hidden items-center gap-2 text-xs text-slate-500 sm:flex">
@@ -122,16 +209,12 @@ export default function AtlasLogin() {
 
             <div className="mt-8 flex flex-wrap gap-x-8 gap-y-3 text-xs text-slate-500">
               <span className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#22d3ee]" />
-                +2,5 kg por semana
-              </span>
-              <span className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8]" />
-                Datos offline
+                Sincronización en la nube
               </span>
               <span className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_10px_#67e8f9]" />
-                Diseñado para PWA
+                Instalable en móvil
               </span>
             </div>
           </section>
@@ -144,14 +227,24 @@ export default function AtlasLogin() {
                   A
                 </div>
 
-                <h2 className="mt-7 font-display text-2xl font-bold text-white">Bienvenido de nuevo</h2>
+                <h2 className="mt-7 font-display text-2xl font-bold text-white">
+                  {modo === 'register' ? 'Crea tu cuenta' : 'Bienvenido de nuevo'}
+                </h2>
                 <p className="mt-2 text-sm text-slate-400">
-                  Accede para continuar exactamente donde lo dejaste.
+                  {modo === 'register'
+                    ? 'Empieza tu historial hoy y deja que Atlas recuerde cada avance.'
+                    : 'Accede para continuar exactamente donde lo dejaste.'}
                 </p>
 
                 {error && (
                   <div className="mt-6 rounded-xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                     {error}
+                  </div>
+                )}
+
+                {success && (
+                  <div className="mt-6 rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                    {success}
                   </div>
                 )}
 
@@ -169,8 +262,88 @@ export default function AtlasLogin() {
                   {loading ? 'Conectando…' : 'Continuar con Google'}
                 </button>
 
+                <div className="my-6 flex items-center gap-3 text-[10px] uppercase tracking-[0.2em] text-slate-600">
+                  <span className="h-px flex-1 bg-white/10" />
+                  o continúa con correo
+                  <span className="h-px flex-1 bg-white/10" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-black/20 p-1">
+                  <button
+                    type="button"
+                    onClick={() => cambiarModo('login')}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                      modo === 'login'
+                        ? 'bg-cyan-400/10 text-cyan-200'
+                        : 'text-slate-500 hover:text-slate-200'
+                    }`}
+                  >
+                    Iniciar sesión
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => cambiarModo('register')}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                      modo === 'register'
+                        ? 'bg-cyan-400/10 text-cyan-200'
+                        : 'text-slate-500 hover:text-slate-200'
+                    }`}
+                  >
+                    Crear cuenta
+                  </button>
+                </div>
+
+                <form onSubmit={handleCorreoSubmit} className="mt-5 space-y-3">
+                  {modo === 'register' && (
+                    <label className="block">
+                      <span className="text-[11px] font-semibold text-slate-400">Nombre completo</span>
+                      <input
+                        type="text"
+                        value={formulario.nombre}
+                        onChange={(event) => actualizarCampo('nombre', event.target.value)}
+                        placeholder="Tu nombre y apellido"
+                        autoComplete="name"
+                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400/40"
+                      />
+                    </label>
+                  )}
+
+                  <label className="block">
+                    <span className="text-[11px] font-semibold text-slate-400">Correo electrónico</span>
+                    <input
+                      type="email"
+                      value={formulario.correo}
+                      onChange={(event) => actualizarCampo('correo', event.target.value)}
+                      placeholder="nombre@correo.com"
+                      autoComplete="email"
+                      className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400/40"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-[11px] font-semibold text-slate-400">Contraseña</span>
+                    <input
+                      type="password"
+                      value={formulario.contrasena}
+                      onChange={(event) => actualizarCampo('contrasena', event.target.value)}
+                      placeholder={modo === 'register' ? 'Mínimo 6 caracteres' : 'Tu contraseña'}
+                      autoComplete={modo === 'register' ? 'new-password' : 'current-password'}
+                      className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400/40"
+                    />
+                  </label>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-cyan-400 px-5 py-3.5 text-sm font-bold text-slate-950 shadow-[0_12px_40px_-14px_rgba(34,211,238,0.9)] transition hover:brightness-110 disabled:opacity-60"
+                  >
+                    {loading && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                    {loading ? 'Procesando…' : modo === 'register' ? 'Crear cuenta' : 'Iniciar sesión'}
+                  </button>
+                </form>
+
                 <p className="mt-7 text-center text-[11px] leading-relaxed text-slate-600">
-                  Acceso sin contraseñas · Tus datos permanecen privados
+                  Acceso seguro · Tus datos permanecen privados
                 </p>
               </div>
             </div>
@@ -178,7 +351,7 @@ export default function AtlasLogin() {
         </main>
 
         <footer className="flex flex-col gap-2 border-t border-white/5 pt-5 text-[11px] text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-          <span>© 2026 Atlas Training Systems</span>
+          <span>© 2026 Atlas · Sistemas de Entrenamiento</span>
           <span>Instalable en web y móvil · PWA</span>
         </footer>
       </div>

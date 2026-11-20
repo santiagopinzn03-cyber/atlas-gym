@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ChevronRight,
   Flame,
+  Pencil,
   Sparkles,
   Target,
   TrendingUp,
@@ -40,7 +41,12 @@ function StatCard({ icon: Icon, label, value, detail, tone = 'cyan' }) {
   )
 }
 
-export default function Dashboard({ history, onSelectGroup, onNavigate }) {
+export default function Dashboard({ history, customExercises, firstName, onEditName, onSelectGroup, onNavigate }) {
+  const contarEjercicios = (group) => {
+    const total = group.exerciseIds.length + customExercises.filter((item) => item.group === group.id).length
+    return `${total} ${total === 1 ? 'ejercicio' : 'ejercicios'}`
+  }
+
   const stats = useMemo(
     () => ({
       streak: getStreak(history),
@@ -64,10 +70,20 @@ export default function Dashboard({ history, onSelectGroup, onNavigate }) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-300/70">
             Panel de control
           </p>
-          <h1 className="mt-2 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Hola, atleta
-            <span className="text-cyan-400">.</span>
-          </h1>
+          <div className="mt-2 flex items-center gap-2">
+            <h1 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              Hola, {firstName}
+              <span className="text-cyan-400">.</span>
+            </h1>
+            <button
+              type="button"
+              onClick={onEditName}
+              aria-label="Editar nombre"
+              className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-slate-500 transition hover:border-cyan-400/30 hover:text-cyan-200"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">
             Hoy es un buen día para superar tu propia memoria. Elige un grupo muscular y empieza.
           </p>
@@ -102,8 +118,8 @@ export default function Dashboard({ history, onSelectGroup, onNavigate }) {
         <StatCard
           icon={Target}
           label="Próximo reto"
-          value="+2,5 kg"
-          detail="Incremento sugerido"
+          value={history.length ? '+2,5 kg' : '0 kg'}
+          detail={history.length ? 'Incremento sugerido' : 'Registra tu primera serie'}
         />
       </section>
 
@@ -130,7 +146,7 @@ export default function Dashboard({ history, onSelectGroup, onNavigate }) {
                 <p className="mt-1 text-sm text-slate-400">
                   Tu último registro:{' '}
                   <span className="font-semibold text-sky-300">
-                    {formatKg(stats.lastSet.weight_kg)} kg × {stats.lastSet.reps} reps
+                    {formatKg(stats.lastSet.weight_kg)} kg × {stats.lastSet.reps} repeticiones
                   </span>
                   <span className="text-slate-600"> · {lastGroup.name}</span>
                 </p>
@@ -178,7 +194,7 @@ export default function Dashboard({ history, onSelectGroup, onNavigate }) {
                   <Icon className="h-5 w-5" strokeWidth={1.8} />
                 </div>
                 <p className="mt-5 font-display text-base font-semibold text-white">{group.name}</p>
-                <p className="mt-1 text-[11px] text-slate-500">{group.exerciseIds.length} ejercicios</p>
+                <p className="mt-1 text-[11px] text-slate-500">{contarEjercicios(group)}</p>
                 <div className="mt-4 flex w-full items-center justify-between text-slate-600">
                   <span className="text-[10px] uppercase tracking-widest">Entrenar</span>
                   <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1 group-hover:text-cyan-300" />

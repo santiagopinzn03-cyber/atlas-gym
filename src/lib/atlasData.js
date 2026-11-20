@@ -68,9 +68,16 @@ export const EXERCISES = {
 
 export const DAILY_TARGET_KG = 8000
 export const WEEK_DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+export const MONTH_LABELS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+export const PERIOD_OPTIONS = [
+  { id: 'week', label: 'Semana' },
+  { id: 'month', label: 'Mes' },
+  { id: 'year', label: 'Año' },
+]
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const pad = (value) => String(value).padStart(2, '0')
+const volumeOf = (set) => Number(set.weight_kg) * Number(set.reps)
 
 export function dateKey(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
@@ -81,6 +88,208 @@ export function startOfWeek(date = new Date()) {
   copy.setHours(0, 0, 0, 0)
   copy.setDate(copy.getDate() - ((copy.getDay() + 6) % 7))
   return copy
+}
+
+function startOfMonth(date = new Date(), offsetMonths = 0) {
+  return new Date(date.getFullYear(), date.getMonth() + offsetMonths, 1)
+}
+
+function daysInMonth(year, monthIndex) {
+  return new Date(year, monthIndex + 1, 0).getDate()
+}
+
+function weekBounds(offsetWeeks = 0, reference = new Date()) {
+  const start = startOfWeek(reference)
+  start.setDate(start.getDate() + offsetWeeks * 7)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 7)
+  return { start, end }
+}
+
+export function getPeriodBounds(period = 'week', monthOffset = 0, reference = new Date()) {
+  if (period === 'month') {
+    const start = startOfMonth(reference, monthOffset)
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1)
+    return { start, end }
+  }
+
+  if (period === 'year') {
+    const year = reference.getFullYear()
+    return { start: new Date(year, 0, 1), end: new Date(year + 1, 0, 1) }
+  }
+
+  return weekBounds(0, reference)
+}
+
+export function getComparisonBounds(period = 'week', monthOffset = 0, reference = new Date()) {
+  if (period === 'month') return getPeriodBounds('month', monthOffset - 1, reference)
+
+  if (period === 'year') {
+    const year = reference.getFullYear() - 1
+    return { start: new Date(year, 0, 1), end: new Date(year + 1, 0, 1) }
+  }
+
+  return weekBounds(-1, reference)
+}
+
+export function filterSetsByPeriod(history = [], period = 'week', monthOffset = 0) {
+  const { start, end } = getPeriodBounds(period, monthOffset)
+
+  return history.filter((set) => {
+    const date = new Date(set.created_at)
+    return date >= start && date < end
+  })
+}
+
+export function getPeriodSets(history = [], period = 'week', monthOffset = 0) {
+  return filterSetsByPeriod(history, period, monthOffset)
+}
+
+function tonnageBetween(history = [], bounds) {
+  return history.reduce((total, set) => {
+    const date = new Date(set.created_at)
+    return date >= bounds.start && date < bounds.end ? total + volumeOf(set) : total
+  }, 0)
+}
+
+function volumeBetween(sets = [], start, end) {
+  return sets.reduce((total, set) => {
+    const date = new Date(set.created_at)
+    return date >= start && date < end ? total + volumeOf(set) : total
+  }, 0)
+}
+
+export function getPeriodTonnage(history = [], period = 'week', monthOffset = 0) {
+  return tonnageBetween(history, getPeriodBounds(period, monthOffset))
+}
+
+export function getPreviousPeriodTonnage(history = [], period = 'week', monthOffset = 0) {
+  return tonnageBetween(history, getComparisonBounds(period, monthOffset))
+}
+
+export function getPeriodSessions(history = [], period = 'week', monthOffset = 0) {
+  return new Set(
+    getPeriodSets(history, period, monthOffset).map((set) => dateKey(new Date(set.created_at))),
+  ).size
+}
+
+export function getPeriodExpectedDays(period = 'week', monthOffset = 0) {
+  const now = new Date()
+
+  if (period === 'month') {
+    return daysInMonth(now.getFullYear(), now.getMonth() + monthOffset)
+  }
+
+  if (period === 'year') {
+    const year = now.getFullYear()
+    return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 366 : 365
+  }
+
+  return 7
+}
+
+export function getPeriodBuckets(history = [], period = 'week', monthOffset = 0) {
+  const sets = getPeriodSets(history, period, monthOffset)
+  const now = new Date()
+  const { start } = getPeriodBounds(period, monthOffset, now)
+
+  if (period === 'year') {
+    const year = start.getFullYear()
+
+    return MONTH_LABELS_SHORT.map((label, index) => {
+      const bucketStart = new Date(year, index, 1)
+      const bucketEnd = new Date(year, index + 1, 1)
+
+      return {
+        key: `${year}-${pad(index + 1)}`,
+        label,
+        volume: volumeBetween(sets, bucketStart, bucketEnd),
+        target: DAILY_TARGET_KG * daysInMonth(year, index),
+        isToday: year === now.getFullYear() && index === now.getMonth(),
+        isFuture: bucketStart > now,
+      }
+    })
+  }
+
+  if (period === 'month') {
+    const totalDays = daysInMonth(start.getFullYear(), start.getMonth())
+
+    return Array.from({ length: totalDays }, (_, index) => {
+      const date = new Date(start.getFullYear(), start.getMonth(), index + 1)
+      const next = new Date(date)
+      next.setDate(next.getDate() + 1)
+
+      return {
+        key: dateKey(date),
+        label: String(index + 1),
+        volume: volumeBetween(sets, date, next),
+        target: DAILY_TARGET_KG,
+        isToday: dateKey(date) === dateKey(now),
+        isFuture: date > now,
+      }
+    })
+  }
+
+  return WEEK_DAY_LABELS.map((label, index) => {
+    const date = new Date(start)
+    date.setDate(start.getDate() + index)
+    const next = new Date(date)
+    next.setDate(next.getDate() + 1)
+
+    return {
+      key: dateKey(date),
+      label,
+      volume: volumeBetween(sets, date, next),
+      target: DAILY_TARGET_KG,
+      isToday: dateKey(date) === dateKey(now),
+      isFuture: date > now,
+    }
+  })
+}
+
+export function getPeriodBestDay(history = [], period = 'week', monthOffset = 0) {
+  return getPeriodBuckets(history, period, monthOffset).reduce(
+    (best, bucket) => (bucket.volume > best.volume ? { label: bucket.label, volume: bucket.volume } : best),
+    { label: '—', volume: 0 },
+  )
+}
+
+export function formatPeriodLabel(period = 'week', monthOffset = 0) {
+  const now = new Date()
+
+  if (period === 'month') {
+    const text = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(
+      startOfMonth(now, monthOffset),
+    )
+    return text.charAt(0).toUpperCase() + text.slice(1)
+  }
+
+  if (period === 'year') return String(now.getFullYear())
+
+  return 'Semana actual'
+}
+
+export function getTonnageLabel(period = 'week', monthOffset = 0) {
+  if (period === 'week') return 'Tonelaje semanal'
+  return `Tonelaje de ${formatPeriodLabel(period, monthOffset).toLowerCase()}`
+}
+
+export function getComparisonLabel(period = 'week', monthOffset = 0) {
+  if (period === 'week') return 'frente a la semana anterior'
+  if (period === 'month') return `frente a ${formatPeriodLabel('month', monthOffset - 1).toLowerCase()}`
+  return `frente a ${new Date().getFullYear() - 1}`
+}
+
+export function getSemaphoreLabel(period = 'week', monthOffset = 0) {
+  if (period === 'week') return 'Semáforo semanal'
+  if (period === 'month') return `Semáforo de ${formatPeriodLabel('month', monthOffset).toLowerCase()}`
+  return `Semáforo de ${new Date().getFullYear()}`
+}
+
+export function getPeriodTitle(period = 'week') {
+  if (period === 'month') return 'Tu mes en números'
+  if (period === 'year') return 'Tu año en números'
+  return 'Tu semana en números'
 }
 
 export function getLastSet(history, exerciseId) {
@@ -119,14 +328,6 @@ export function getWeekDays() {
   })
 }
 
-function weekBounds(offsetWeeks = 0) {
-  const start = startOfWeek()
-  start.setDate(start.getDate() + offsetWeeks * 7)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 7)
-  return { start, end }
-}
-
 export function getWeekSets(history, offsetWeeks = 0) {
   const { start, end } = weekBounds(offsetWeeks)
   return history.filter((set) => {
@@ -137,7 +338,7 @@ export function getWeekSets(history, offsetWeeks = 0) {
 
 export function getWeeklyTonnage(history, offsetWeeks = 0) {
   return getWeekSets(history, offsetWeeks).reduce(
-    (total, set) => total + Number(set.weight_kg) * Number(set.reps),
+    (total, set) => total + volumeOf(set),
     0,
   )
 }
@@ -150,18 +351,25 @@ export function getDailyVolumes(history) {
   return getWeekDays().reduce((result, day) => {
     result[day.key] = getWeekSets(history)
       .filter((set) => dateKey(new Date(set.created_at)) === day.key)
-      .reduce((total, set) => total + Number(set.weight_kg) * Number(set.reps), 0)
+      .reduce((total, set) => total + volumeOf(set), 0)
     return result
   }, {})
 }
 
 const estimateMax = (set) => Number(set.weight_kg) * (1 + Number(set.reps) / 30)
 
-export function getStrengthComparison(history) {
-  const currentBounds = weekBounds(0)
-  const previousBounds = weekBounds(-1)
+export function getStrengthComparison(history = [], period = 'week', monthOffset = 0) {
+  const currentBounds = getPeriodBounds(period, monthOffset)
+  const previousBounds = getComparisonBounds(period, monthOffset)
 
-  const bestByWeek = (bounds) =>
+  const names = history.reduce((result, set) => {
+    if (!result[set.exercise_id]) {
+      result[set.exercise_id] = set.exercise_name || EXERCISES[set.exercise_id]?.name || set.exercise_id
+    }
+    return result
+  }, {})
+
+  const bestByBounds = (bounds) =>
     history.reduce((result, set) => {
       const date = new Date(set.created_at)
       if (date < bounds.start || date >= bounds.end) return result
@@ -169,13 +377,13 @@ export function getStrengthComparison(history) {
       return result
     }, {})
 
-  const current = bestByWeek(currentBounds)
-  const previous = bestByWeek(previousBounds)
+  const current = bestByBounds(currentBounds)
+  const previous = bestByBounds(previousBounds)
 
   return Object.keys(current)
     .map((id) => ({
       id,
-      name: EXERCISES[id]?.name ?? id,
+      name: names[id] ?? EXERCISES[id]?.name ?? id,
       current: current[id],
       previous: previous[id] ?? 0,
       delta: previous[id] ? ((current[id] - previous[id]) / previous[id]) * 100 : 0,
@@ -185,12 +393,7 @@ export function getStrengthComparison(history) {
 }
 
 export function getBestDay(history) {
-  const volumes = getDailyVolumes(history)
-  const days = getWeekDays()
-  return days.reduce(
-    (best, day) => (volumes[day.key] > best.volume ? { label: day.label, volume: volumes[day.key] } : best),
-    { label: '—', volume: 0 },
-  )
+  return getPeriodBestDay(history, 'week')
 }
 
 export function getDaysAgoLabel(isoDate) {
@@ -207,6 +410,90 @@ export function getDaysAgoLabel(isoDate) {
 
 export function formatKg(value) {
   return new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 }).format(Math.round(value))
+}
+
+export function formatShortDate(date = new Date()) {
+  return new Intl.DateTimeFormat('es-ES', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
+}
+
+export function formatFullDate(date = new Date()) {
+  const text = new Intl.DateTimeFormat('es-ES', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date)
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+export function formatTime(isoDate) {
+  return new Intl.DateTimeFormat('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(isoDate))
+}
+
+export function getGroupName(id) {
+  return MUSCLE_GROUPS.find((group) => group.id === id)?.name ?? id
+}
+
+export function groupSetsByDay(history = []) {
+  const dias = new Map()
+
+  history.forEach((set) => {
+    const fecha = new Date(set.created_at)
+    const clave = dateKey(fecha)
+
+    if (!dias.has(clave)) {
+      dias.set(clave, { key: clave, date: fecha, sets: [] })
+    }
+
+    dias.get(clave).sets.push(set)
+  })
+
+  return [...dias.values()]
+    .sort((a, b) => b.date.getTime() - a.date.getTime())
+    .map((dia) => ({
+      ...dia,
+      sets: [...dia.sets].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      ),
+      volume: dia.sets.reduce((total, set) => total + volumeOf(set), 0),
+      exerciseCount: new Set(dia.sets.map((set) => set.exercise_id)).size,
+      groups: [...new Set(dia.sets.map((set) => set.muscle_group).filter(Boolean))],
+    }))
+}
+
+export function groupSetsByExercise(sets = []) {
+  const ejercicios = new Map()
+
+  sets.forEach((set) => {
+    if (!ejercicios.has(set.exercise_id)) {
+      ejercicios.set(set.exercise_id, {
+        id: set.exercise_id,
+        name: set.exercise_name || EXERCISES[set.exercise_id]?.name || set.exercise_id,
+        muscleGroup: set.muscle_group,
+        sets: [],
+      })
+    }
+
+    ejercicios.get(set.exercise_id).sets.push(set)
+  })
+
+  return [...ejercicios.values()]
+    .map((ejercicio) => ({
+      ...ejercicio,
+      volume: ejercicio.sets.reduce((total, set) => total + volumeOf(set), 0),
+      best: ejercicio.sets.reduce(
+        (mejor, set) => (volumeOf(set) > volumeOf(mejor) ? set : mejor),
+        ejercicio.sets[0],
+      ),
+    }))
+    .sort((a, b) => b.volume - a.volume)
 }
 
 export function formatLongDate(date = new Date()) {

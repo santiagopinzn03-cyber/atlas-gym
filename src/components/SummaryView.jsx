@@ -12,30 +12,39 @@ import {
   Trophy,
   Weight,
 } from 'lucide-react'
+import PeriodFilter from './PeriodFilter'
 import {
   formatKg,
-  getBestDay,
+  formatPeriodLabel,
+  getComparisonLabel,
+  getPeriodBestDay,
+  getPeriodSets,
+  getPeriodSessions,
+  getPeriodTitle,
+  getPeriodTonnage,
+  getPreviousPeriodTonnage,
   getStreak,
   getStrengthComparison,
-  getWeeklySessions,
-  getWeeklyTonnage,
 } from '../lib/atlasData'
 
-export default function SummaryView({ history, onNavigate }) {
+export default function SummaryView({ history, period, monthOffset, onPeriodChange, onNavigate }) {
   const [slide, setSlide] = useState(0)
   const [toast, setToast] = useState('')
 
+  const periodoTexto = formatPeriodLabel(period, monthOffset).toLowerCase()
+  const periodoRelato = period === 'week' ? 'esta semana' : periodoTexto
+
   const data = useMemo(
     () => ({
-      tonnage: getWeeklyTonnage(history),
-      previous: getWeeklyTonnage(history, -1),
-      sessions: getWeeklySessions(history),
-      sets: history.length,
+      tonnage: getPeriodTonnage(history, period, monthOffset),
+      previous: getPreviousPeriodTonnage(history, period, monthOffset),
+      sessions: getPeriodSessions(history, period, monthOffset),
+      sets: getPeriodSets(history, period, monthOffset).length,
       streak: getStreak(history),
-      bestDay: getBestDay(history),
-      comparison: getStrengthComparison(history),
+      bestDay: getPeriodBestDay(history, period, monthOffset),
+      comparison: getStrengthComparison(history, period, monthOffset),
     }),
-    [history],
+    [history, period, monthOffset],
   )
 
   const delta = data.previous ? ((data.tonnage - data.previous) / data.previous) * 100 : 0
@@ -43,11 +52,11 @@ export default function SummaryView({ history, onNavigate }) {
   const slides = [0, 1, 2]
 
   async function handleShare() {
-    const text = `Atlas · Esta semana moví ${formatKg(data.tonnage)} kg en ${data.sessions} sesiones. Racha de ${data.streak} días. La fuerza se construye.`
+    const text = `Fuerza Pura · En ${periodoRelato} moví ${formatKg(data.tonnage)} kg en ${data.sessions} sesiones. Racha de ${data.streak} días. La fuerza se construye.`
 
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Mi semana en Atlas', text, url: window.location.href })
+        await navigator.share({ title: 'Mi resumen en Atlas', text, url: window.location.href })
         return
       }
       await navigator.clipboard.writeText(text)
@@ -65,10 +74,10 @@ export default function SummaryView({ history, onNavigate }) {
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-300/70">
-            Weekly story
+            {period === 'week' ? 'Historia semanal' : `Historia de ${periodoTexto}`}
           </p>
           <h1 className="mt-2 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Tu semana en números
+            {getPeriodTitle(period)}
           </h1>
           <p className="mt-2 text-sm text-slate-400">Una historia de constancia, lista para compartir.</p>
         </div>
@@ -81,6 +90,8 @@ export default function SummaryView({ history, onNavigate }) {
           Volver al panel
         </button>
       </header>
+
+      <PeriodFilter period={period} monthOffset={monthOffset} onChange={onPeriodChange} />
 
       <div className="mx-auto w-full max-w-xl">
         <div className="glass-strong relative overflow-hidden rounded-[2rem]">
@@ -117,7 +128,7 @@ export default function SummaryView({ history, onNavigate }) {
                 </p>
                 <p className="mt-2 font-display text-xl font-semibold text-cyan-300">kg movidos</p>
                 <p className="mt-6 max-w-sm text-sm leading-relaxed text-slate-400">
-                  Cada kilo suma. Esta semana tu cuerpo hizo el trabajo que tu disciplina decidió.
+                  Cada kilo suma. En {periodoRelato} tu cuerpo hizo el trabajo que tu disciplina decidió.
                 </p>
                 <div className="mt-8 grid grid-cols-2 gap-3">
                   <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
@@ -129,7 +140,7 @@ export default function SummaryView({ history, onNavigate }) {
                       {delta >= 0 ? '+' : ''}
                       {delta.toFixed(1)}%
                     </p>
-                    <p className="mt-1 text-[11px] text-slate-500">vs semana anterior</p>
+                    <p className="mt-1 text-[11px] text-slate-500">{getComparisonLabel(period, monthOffset)}</p>
                   </div>
                 </div>
               </div>
@@ -156,7 +167,7 @@ export default function SummaryView({ history, onNavigate }) {
                     <div>
                       <p className="text-sm font-semibold text-white">Tu mejor día</p>
                       <p className="mt-1 text-xs text-slate-500">
-                        Día {data.bestDay.label} · {formatKg(data.bestDay.volume)} kg de volumen
+                        {period === 'year' ? 'En' : 'Día'} {data.bestDay.label} · {formatKg(data.bestDay.volume)} kg de volumen
                       </p>
                     </div>
                   </div>
@@ -239,7 +250,7 @@ export default function SummaryView({ history, onNavigate }) {
           ) : (
             <>
               <Share2 className="h-4 w-4" />
-              Compartir mi semana
+              Compartir resumen
               <ArrowRight className="h-4 w-4" />
             </>
           )}

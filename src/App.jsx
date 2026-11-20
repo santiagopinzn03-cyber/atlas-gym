@@ -2,28 +2,41 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   BarChart3,
   Dumbbell,
+  History,
   Home,
   LoaderCircle,
   LogOut,
+  Pencil,
   ShieldAlert,
   Trophy,
   UserRound,
 } from 'lucide-react'
 import AtlasLogin from './components/AtlasLogin'
 import Dashboard from './components/Dashboard'
+import HistoryView from './components/HistoryView'
 import ProgressView from './components/ProgressView'
 import SummaryView from './components/SummaryView'
 import WorkoutView from './components/WorkoutView'
 import { MUSCLE_GROUPS } from './lib/atlasData'
-import { fetchHistory } from './lib/historyStore'
+import { fetchCustomExercises, fetchHistory } from './lib/historyStore'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Inicio', icon: Home },
   { id: 'workout', label: 'Entrenar', icon: Dumbbell },
+  { id: 'history', label: 'Historial', icon: History },
   { id: 'progress', label: 'Progreso', icon: BarChart3 },
   { id: 'summary', label: 'Resumen', icon: Trophy },
 ]
+
+function nombreDelUsuario(user) {
+  const metadata = user?.user_metadata ?? {}
+  return metadata.display_name || metadata.full_name || metadata.name || ''
+}
+
+function primerNombre(nombre) {
+  return nombre.trim().split(/\s+/)[0] || 'atleta'
+}
 
 function Brand({ compact = false }) {
   return (
@@ -34,7 +47,7 @@ function Brand({ compact = false }) {
       {!compact && (
         <div>
           <p className="font-display text-base font-bold tracking-[0.22em] text-white">ATLAS</p>
-          <p className="text-[9px] uppercase tracking-[0.26em] text-cyan-300/60">Kinetic Obsidian</p>
+          <p className="text-[9px] uppercase tracking-[0.26em] text-cyan-300/60">Fuerza Pura</p>
         </div>
       )}
     </div>
@@ -103,11 +116,22 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [history, setHistory] = useState([])
+  const [customExercises, setCustomExercises] = useState([])
   const [dataLoading, setDataLoading] = useState(false)
   const [dataError, setDataError] = useState('')
   const [view, setView] = useState('dashboard')
+  const [period, setPeriod] = useState('week')
+  const [monthOffset, setMonthOffset] = useState(0)
   const [selectedGroup, setSelectedGroup] = useState(MUSCLE_GROUPS[0])
   const [retryToken, setRetryToken] = useState(0)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [profileName, setProfileName] = useState('')
+  const [profileError, setProfileError] = useState('')
+  const [profileSaving, setProfileSaving] = useState(false)
+
+  const nombre = nombreDelUsuario(session?.user)
+  const saludo = primerNombre(nombre)
+  const avatarUrl = session?.user?.user_metadata?.avatar_url || ''
 
   useEffect(() => {
     if (!isSupabaseConfigured) return
@@ -128,6 +152,7 @@ export default function App() {
       setDataLoading(Boolean(nextSession))
       if (!nextSession) {
         setHistory([])
+        setCustomExercises([])
         setDataError('')
         setView('dashboard')
       }
@@ -144,9 +169,12 @@ export default function App() {
 
     let active = true
 
-    fetchHistory(session.user.id)
-      .then((records) => {
-        if (active) setHistory(records)
+    Promise.all([fetchHistory(session.user.id), fetchCustomExercises(session.user.id)])
+      .then(([records, exercises]) => {
+        if (active) {
+          setHistory(records)
+          setCustomExercises(exercises)
+        }
       })
       .catch((error) => {
         if (active) setDataError(error.message || 'No se pudieron cargar tus datos.')
@@ -160,17 +188,73 @@ export default function App() {
     }
   }, [session, retryToken])
 
-  const refreshHistory = useCallback(async () => {
+  const refreshData = useCallback(async () => {
     if (!session) return
     setDataError('')
-    const records = await fetchHistory(session.user.id)
+    const [records, exercises] = await Promise.all([
+      fetchHistory(session.user.id),
+      fetchCustomExercises(session.user.id),
+    ])
     setHistory(records)
+    setCustomExercises(exercises)
   }, [session])
+
+  const handleCustomExerciseAdded = useCallback((exercise) => {
+    setCustomExercises((anterior) => [exercise, ...anterior])
+  }, [])
+
+  const handlePeriodChange = useCallback((nextPeriod, nextMonthOffset = 0) => {
+    setPeriod(nextPeriod)
+    setMonthOffset(nextPeriod === 'month' ? nextMonthOffset : 0)
+  }, [])
+
+  function abrirPerfil() {
+    setProfileName(nombre)
+    setProfileError('')
+    setProfileOpen(true)
+  }
+
+  async function handleProfileSubmit(event) {
+    event.preventDefault()
+    const nuevoNombre = profileName.trim()
+
+    if (!nuevoNombre) {
+      setProfileError('Escribe tu nombre para guardarlo.')
+      return
+    }
+
+    setProfileSaving(true)
+    setProfileError('')
+
+    const { error } = await supabase.auth.updateUser({
+      data: { ...(session?.user?.user_metadata ?? {}), display_name: nuevoNombre },
+    })
+
+    if (error) {
+      setProfileError('No se pudo guardar tu nombre. Inténtalo de nuevo.')
+    } else {
+      setSession((actual) =>
+        actual
+          ? {
+              ...actual,
+              user: {
+                ...actual.user,
+                user_metadata: { ...actual.user.user_metadata, display_name: nuevoNombre },
+              },
+            }
+          : actual,
+      )
+      setProfileOpen(false)
+    }
+
+    setProfileSaving(false)
+  }
 
   async function handleSignOut() {
     await supabase.auth.signOut()
     setSession(null)
     setHistory([])
+    setCustomExercises([])
     setDataError('')
     setView('dashboard')
   }
@@ -200,20 +284,48 @@ export default function App() {
           <WorkoutView
             group={selectedGroup}
             history={history}
+            customExercises={customExercises}
             userId={session.user.id}
             onBack={() => setView('dashboard')}
-            onSetsSaved={refreshHistory}
+            onSetsSaved={refreshData}
+            onCustomExerciseAdded={handleCustomExerciseAdded}
+            onNavigate={setView}
+          />
+        )
+      case 'history':
+        return (
+          <HistoryView
+            history={history}
+            userId={session.user.id}
             onNavigate={setView}
           />
         )
       case 'progress':
-        return <ProgressView history={history} />
+        return (
+          <ProgressView
+            history={history}
+            period={period}
+            monthOffset={monthOffset}
+            onPeriodChange={handlePeriodChange}
+          />
+        )
       case 'summary':
-        return <SummaryView history={history} onNavigate={setView} />
+        return (
+          <SummaryView
+            history={history}
+            period={period}
+            monthOffset={monthOffset}
+            onPeriodChange={handlePeriodChange}
+            onNavigate={setView}
+          />
+        )
       default:
         return (
           <Dashboard
             history={history}
+            customExercises={customExercises}
+            firstName={saludo}
+            onEditName={abrirPerfil}
             onSelectGroup={handleSelectGroup}
             onNavigate={setView}
           />
@@ -246,11 +358,33 @@ export default function App() {
           <div className="mt-auto">
             <div className="glass rounded-2xl p-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-200">
+                <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-200">
                   <UserRound className="h-5 w-5" />
+                  {avatarUrl && (
+                    <img
+                      src={avatarUrl}
+                      alt=""
+                      className="absolute inset-0 h-full w-full object-cover"
+                      onError={(event) => {
+                        event.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  )}
                 </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white">Atleta verificado</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-sm font-semibold text-white" title={nombre || 'Atleta'}>
+                      {nombre || 'Atleta'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={abrirPerfil}
+                      aria-label="Editar nombre"
+                      className="shrink-0 rounded-md p-1 text-slate-500 transition hover:bg-white/10 hover:text-cyan-200"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  </div>
                   <p className="text-[10px] text-slate-500">Sesión activa</p>
                 </div>
               </div>
@@ -323,6 +457,68 @@ export default function App() {
           </nav>
         </div>
       </div>
+
+      {profileOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-5 backdrop-blur-sm"
+          onClick={() => setProfileOpen(false)}
+        >
+          <div
+            className="glass-strong w-full max-w-md rounded-3xl p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="titulo-perfil"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/25 bg-cyan-400/10 text-cyan-200">
+              <Pencil className="h-5 w-5" />
+            </div>
+            <h2 id="titulo-perfil" className="mt-5 font-display text-xl font-bold text-white">
+              Editar nombre
+            </h2>
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              Así te saludaremos en tu panel de Atlas.
+            </p>
+
+            {profileError && (
+              <p className="mt-4 rounded-lg border border-rose-400/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                {profileError}
+              </p>
+            )}
+
+            <form onSubmit={handleProfileSubmit} className="mt-5">
+              <label className="block">
+                <span className="text-[11px] font-semibold text-slate-400">Nombre completo</span>
+                <input
+                  type="text"
+                  value={profileName}
+                  onChange={(event) => setProfileName(event.target.value)}
+                  autoFocus
+                  autoComplete="name"
+                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400/40"
+                />
+              </label>
+
+              <div className="mt-5 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setProfileOpen(false)}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-semibold text-slate-300 transition hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-sky-500 to-cyan-400 px-4 py-3 text-xs font-bold text-slate-950 transition hover:brightness-110 disabled:opacity-60"
+                >
+                  {profileSaving ? 'Guardando…' : 'Guardar nombre'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
